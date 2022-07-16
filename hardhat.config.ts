@@ -4,6 +4,9 @@ require("dotenv").config();
 
 const config: HardhatUserConfig = {
   solidity: "0.8.9",
+  networks: {
+    localhost: { }
+  },
 };
 
 export default config;
