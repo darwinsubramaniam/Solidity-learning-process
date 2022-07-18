@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { expect } from "chai";
-import { BigNumber, ContractReceipt } from "ethers";
+import { BigNumber, ContractReceipt, ContractTransaction } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Token } from "../typechain-types";
 
@@ -33,7 +33,8 @@ describe("Token", () => {
   let token: Token,
     deployer: SignerWithAddress,
     receiver: SignerWithAddress,
-    accounts: SignerWithAddress[];
+    accounts: SignerWithAddress[],
+    exchange: SignerWithAddress;
 
   const name = "UDWorld Token";
   const symbol = "UDW";
@@ -47,6 +48,7 @@ describe("Token", () => {
     accounts = await ethers.getSigners();
     deployer = accounts[0];
     receiver = accounts[1];
+    exchange = accounts[2];
   });
 
   describe("Deployment", () => {
@@ -132,6 +134,48 @@ describe("Token", () => {
             .connect(deployer)
             .transfer("0x0", amount),
         ).to.be.rejected;
+      });
+    });
+  });
+
+  describe("Approve delegation transfer", () => {
+    let amount: BigNumber,
+      transaction: ContractTransaction,
+      result: ContractReceipt;
+
+    beforeEach(async () => {
+      // Transfer token to account[1] from account[0]
+      amount = WeiHelper.parse(100);
+      transaction = await token
+        .connect(deployer)
+        .approve(exchange.address, amount);
+      result = await transaction.wait();
+    });
+
+    describe("Success", async () => {
+      it("allocates an allowance for delegated token spending", async () => {
+        expect(await token.allowance(deployer.address, exchange.address)).to
+          .equal(amount);
+      });
+
+      it("emits an Approval event", async () => {
+        const event = result.events![0];
+        expect(event.event).to.equal("Approval");
+
+        const args = event.args!;
+        expect(args.owner).to.equal(deployer.address);
+        expect(args.spender).to.equal(exchange.address);
+        expect(args.value).to.equal(amount);
+      });
+    });
+
+    describe("Failure", async () => {
+      it("reverts: invalid spender", async () => {
+        await expect(
+          token.connect(deployer)
+            .approve("0x0", amount),
+        )
+          .to.be.rejectedWith("invalid address");
       });
     });
   });
