@@ -6,15 +6,13 @@ import { Token } from "../typechain-types";
 import { WeiHelper } from "./Helper/WeiParser";
 
 describe("Exchange", () => {
-  let deployer: SignerWithAddress,
-    accounts: SignerWithAddress[],
-    feeAccount: SignerWithAddress,
-    exchange: Contract;
+  let deployer: SignerWithAddress,accounts: SignerWithAddress[];
+  let feeAccount: SignerWithAddress;
+  let myWallet: SignerWithAddress;
 
-  let token_one: Token,
-    token_two: Token;
-  let myWallet: SignerWithAddress,
-    otherPersonWallet: SignerWithAddress;
+  let exchange: Contract;
+
+  let token_one: Token;
 
   const feePercent = 10;
 
@@ -23,7 +21,6 @@ describe("Exchange", () => {
     deployer = accounts[0];
     feeAccount = accounts[1];
     myWallet = accounts[2];
-    otherPersonWallet = accounts[3];
 
     const Exchange = await ethers.getContractFactory("Exchange");
     const Token = await ethers.getContractFactory("Token");
@@ -46,24 +43,6 @@ describe("Exchange", () => {
 
     it("track the fee percent", async () => {
       expect(await exchange.feePercent()).to.be.equal(10);
-    });
-
-    it("able to withdraw correct ammount", async () => {
-    });
-
-    it("able to check balance", async () => {
-    });
-
-    it("able to place order", async () => {
-    });
-
-    it("able to cancel correct order", async () => {
-    });
-
-    it("able to fill in order, when matched", async () => {
-    });
-
-    it("when order filled , charge are place", async () => {
     });
   });
 
@@ -89,10 +68,10 @@ describe("Exchange", () => {
     describe("Success", () => {
       it("tracks the token deposit", async () => {
         expect(await token_one.balanceOf(exchange.address)).to.equal(ammount);
-        expect(await exchange.tokens(token_one.address, myWallet.address)).to.be
-          .equal(ammount);
-        expect(await exchange.balanceOf(token_one.address, myWallet.address)).to
-          .be.equal(ammount);
+        expect(await exchange.tokens(token_one.address, myWallet.address))
+          .to.be.equal(ammount);
+        expect(await exchange.balanceOf(token_one.address, myWallet.address))
+          .to.be.equal(ammount);
       });
       it("emit Deposit event", () => {
         const event = result.events![1];
@@ -128,6 +107,85 @@ describe("Exchange", () => {
           ),
         ).to.be.rejected;
       });
+    });
+  });
+
+  describe("Withdraw Tokens", () => {
+    let transaction: ContractTransaction;
+    let result: ContractReceipt;
+    let ammount = WeiHelper.parse(100);
+    beforeEach(async () => {
+      // Approve Token
+      let approvalTx = await token_one.connect(myWallet).approve(
+        exchange.address,
+        ammount,
+      );
+      await approvalTx.wait();
+      // Deposit Token
+      transaction = await exchange.connect(myWallet).depositToken(
+        token_one.address,
+        ammount,
+      );
+      result = await transaction.wait();
+
+      // Now Withdraw Token
+      transaction = await exchange.connect(myWallet).withdrawToken(
+        token_one.address,
+        ammount,
+      );
+      result = await transaction.wait();
+    });
+
+    describe("Success", () => {
+      it("withdraw token funds", async () => {
+        expect(await token_one.balanceOf(exchange.address)).to.equal(0);
+        expect(await exchange.tokens(token_one.address, myWallet.address))
+          .to.be.equal(0);
+        expect(await exchange.balanceOf(token_one.address, myWallet.address))
+          .to.be.equal(0);
+      });
+      it("emit Withdraw event", () => {
+        const event = result.events![1];
+        expect(event.event).to.equal("Withdraw");
+        const args = event.args!;
+        expect(args.token).to.equal(token_one.address);
+        expect(args.user).to.equal(myWallet.address);
+        expect(args.ammount).to.equal(ammount);
+        expect(args.balance).to.equal(0);
+      });
+    });
+
+    describe("Failure", () => {
+      it("revert: attempt to withdraw more than deposited", async () => {
+        await expect(
+          exchange.connect(myWallet).withdrawToken(token_one.address, ammount),
+        ).to.be.reverted;
+      });
+    });
+  });
+
+  describe("Checking Balances", () => {
+    let transaction: ContractTransaction;
+    let result: ContractReceipt;
+    let ammount = WeiHelper.parse(1);
+    beforeEach(async () => {
+      // Approve Token
+      let approvalTx = await token_one.connect(myWallet).approve(
+        exchange.address,
+        ammount,
+      );
+      await approvalTx.wait();
+      // Deposit Token
+      transaction = await exchange.connect(myWallet).depositToken(
+        token_one.address,
+        ammount,
+      );
+      result = await transaction.wait();
+    });
+
+    it("tracks the token deposit", async () => {
+      expect(await exchange.balanceOf(token_one.address, myWallet.address))
+      .to.equal(ammount)
     });
   });
 });
