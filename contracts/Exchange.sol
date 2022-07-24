@@ -5,7 +5,7 @@ import "hardhat/console.sol";
 import "./Token.sol";
 
 // [x] Deposit Token
-// [] Withdraw Tokens
+// [x] Withdraw Tokens
 // [x] Check Balances
 // [] Make Orders
 // [] Cancel Orders
@@ -13,11 +13,26 @@ import "./Token.sol";
 // [] Charge Fees
 // [x] Track Fee Account
 contract Exchange {
+    struct _Order {
+        uint256 id; // ID of the order
+        address user; // user who made the order
+        address tokenGet;
+        uint256 ammountGet;
+        address tokenGive;
+        uint256 ammountGive;
+        uint256 unix_created_at;
+    }
+
     address public feeAccount;
     uint256 public feePercent;
 
     // token address => owner address => total deposited
     mapping(address => mapping(address => uint256)) public tokens;
+
+    // Orders Mapping id their orders Key = ID of Order
+    mapping(uint256 => _Order) public orders;
+
+    uint256 public orderCount;
 
     event Deposit(
         address token,
@@ -31,13 +46,22 @@ contract Exchange {
         uint256 ammount,
         uint256 balance
     );
+    event Order (
+        uint256 id,
+        address user,
+        address tokenGet,
+        uint256 ammountGet,
+        address tokenGive,
+        uint256 ammountGive,
+        uint256 unix_created_at
+    );
+
 
     constructor(address _feeAccount, uint256 _feePercent) {
         feeAccount = _feeAccount;
         feePercent = _feePercent;
     }
 
-    // Deposit and withdraw Token
     function depositToken(address _token, uint256 _amount) public {
         // transfer token to exchange
         require(Token(_token).transferFrom(msg.sender, address(this), _amount));
@@ -58,12 +82,43 @@ contract Exchange {
         emit Withdraw(_token, msg.sender, _ammount, tokens[_token][msg.sender]);
     }
 
-    // Check balances
     function balanceOf(address _token, address _user)
         public
         view
         returns (uint256)
     {
         return tokens[_token][_user];
+    }
+
+    function makeOrder(
+        address _tokenGet,
+        uint256 _ammountGet,
+        address _tokenGive,
+        uint256 _ammountGive
+    ) public {
+        // Prevent orders if tokens aren't on exchange.
+        require(balanceOf(_tokenGive,msg.sender) >= _ammountGive, "insufficient Balance");
+
+        orderCount += 1;
+        orders[orderCount] =  _Order(
+            orderCount, // ID
+            msg.sender, // user
+            _tokenGet,
+            _ammountGet,
+            _tokenGive,
+            _ammountGive,
+            block.timestamp // timestamp
+        );
+
+        // Emit Event
+        emit Order(
+            orderCount,
+            msg.sender,
+            _tokenGet,
+            _ammountGet,
+            _tokenGive,
+            _ammountGive,
+            block.timestamp
+        );
     }
 }

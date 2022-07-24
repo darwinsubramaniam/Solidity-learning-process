@@ -1,18 +1,24 @@
 import { ethers } from "hardhat";
-import { expect } from "chai";
-import { Contract, ContractReceipt, ContractTransaction } from "ethers";
+import { assert, expect } from "chai";
+import {
+  Contract,
+  ContractReceipt,
+  ContractTransaction,
+  Transaction,
+} from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Token } from "../typechain-types";
 import { WeiHelper } from "./Helper/WeiParser";
 
 describe("Exchange", () => {
-  let deployer: SignerWithAddress,accounts: SignerWithAddress[];
+  let deployer: SignerWithAddress, accounts: SignerWithAddress[];
   let feeAccount: SignerWithAddress;
   let myWallet: SignerWithAddress;
 
   let exchange: Contract;
 
   let token_one: Token;
+  let token_two: Token;
 
   const feePercent = 10;
 
@@ -32,6 +38,11 @@ describe("Exchange", () => {
     token_one = await Token.connect(myWallet).deploy(
       "1Token",
       "ONE",
+      WeiHelper.parse(100_000),
+    );
+    token_two = await Token.connect(myWallet).deploy(
+      "Mock Dai",
+      "mDai",
       WeiHelper.parse(100_000),
     );
   });
@@ -185,7 +196,79 @@ describe("Exchange", () => {
 
     it("tracks the token deposit", async () => {
       expect(await exchange.balanceOf(token_one.address, myWallet.address))
-      .to.equal(ammount)
+        .to.equal(ammount);
+    });
+  });
+
+  describe("Making Orders", () => {
+    let transaction: ContractTransaction, reciept: ContractReceipt;
+    let ammount = WeiHelper.parse(100);
+    let ammount_to_get = WeiHelper.parse(1);
+    let ammount_to_give = WeiHelper.parse(2);
+    describe("Success", async () => {
+      beforeEach(async () => {
+        // Approve
+        transaction = await token_one.connect(myWallet).approve(
+          exchange.address,
+          ammount,
+        );
+        reciept = await transaction.wait();
+        // Deposit
+        transaction = await exchange.connect(myWallet).depositToken(
+          token_one.address,
+          ammount,
+        );
+        reciept = await transaction.wait();
+        //make oder
+        transaction = await exchange.connect(myWallet)
+          .makeOrder(
+            token_two.address,
+            ammount_to_get,
+            token_one.address,
+            ammount_to_give,
+          );
+        reciept = await transaction.wait();
+      });
+
+      it("Tracks the newly created order", async () => {
+        let order = await exchange.orders(1);
+        let order_count = await exchange.orderCount();
+
+        expect(order_count).to.equal(1);
+
+        expect(order.id).to.equal(1);
+        expect(order.ammountGive).to.be.equal(ammount_to_give);
+        expect(order.ammountGet).to.be.equal(ammount_to_get);
+        expect(order.user).to.be.equal(myWallet.address);
+        expect(order.tokenGet).to.be.equal(token_two.address);
+        expect(order.tokenGive).to.be.equal(token_one.address);
+      });
+
+      it("Emit order event", () => {
+        expect(reciept.events!).is.not.undefined
+        let event = reciept.events![0];
+        expect(event.event!).to.equal("Order");
+
+        let args = event.args!;
+        expect(args.id).to.equal(1);
+        expect(args.user).to.equal(myWallet.address);
+        expect(args.tokenGet).to.equal(token_two.address);
+        expect(args.ammountGet).to.equal(ammount_to_get);
+        expect(args.ammountGive).to.equal(ammount_to_give);
+        expect(args.unix_created_at).to.at.least(1);
+      });
+    });
+
+    describe("Failure", () => {
+        it('REJECTS: with no balance', async () =>{
+            await expect(exchange.connect(myWallet)
+            .makeOrder(
+              token_two.address,
+              ammount_to_get,
+              token_one.address,
+              ammount_to_give,
+            )).to.be.revertedWith("insufficient Balance")
+        })
     });
   });
 });
