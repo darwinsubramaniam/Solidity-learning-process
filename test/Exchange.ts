@@ -1,15 +1,23 @@
 import { ethers } from "hardhat";
 import { expect } from "chai";
-import { Contract, ContractReceipt, ContractTransaction } from "ethers";
+import {
+  BigNumber,
+  Contract,
+  ContractReceipt,
+  ContractTransaction,
+} from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Token } from "../typechain-types";
 import { WeiHelper } from "./Helper/WeiParser";
+import { describe } from "mocha";
 
 describe("Exchange", () => {
   let deployer: SignerWithAddress, accounts: SignerWithAddress[];
   let feeAccount: SignerWithAddress;
-  let myWallet: SignerWithAddress;
-
+  let maker: SignerWithAddress;
+  let taker: SignerWithAddress;
+  let total_token_one_supply: BigNumber;
+  let total_token_two_supply: BigNumber;
   let exchange: Contract;
 
   let token_one: Token;
@@ -21,24 +29,27 @@ describe("Exchange", () => {
     accounts = await ethers.getSigners();
     deployer = accounts[0];
     feeAccount = accounts[1];
-    myWallet = accounts[2];
+    maker = accounts[2];
+    taker = accounts[3];
+    total_token_one_supply = WeiHelper.parse(100_000);
+    total_token_two_supply = WeiHelper.parse(100_000);
 
     const Exchange = await ethers.getContractFactory("Exchange");
     const Token = await ethers.getContractFactory("Token");
 
-    exchange = await Exchange.connect(myWallet).deploy(
+    exchange = await Exchange.connect(maker).deploy(
       feeAccount.address,
       feePercent,
     );
-    token_one = await Token.connect(myWallet).deploy(
+    token_one = await Token.connect(maker).deploy(
       "1Token",
       "ONE",
-      WeiHelper.parse(100_000),
+      total_token_one_supply,
     );
-    token_two = await Token.connect(myWallet).deploy(
+    token_two = await Token.connect(taker).deploy(
       "Mock Dai",
       "mDai",
-      WeiHelper.parse(100_000),
+      total_token_two_supply,
     );
   });
 
@@ -58,13 +69,13 @@ describe("Exchange", () => {
     let ammount = WeiHelper.parse(100);
     beforeEach(async () => {
       // Approve Token
-      let approvalTx = await token_one.connect(myWallet).approve(
+      let approvalTx = await token_one.connect(maker).approve(
         exchange.address,
         ammount,
       );
       await approvalTx.wait();
       // Deposit Token
-      transaction = await exchange.connect(myWallet).depositToken(
+      transaction = await exchange.connect(maker).depositToken(
         token_one.address,
         ammount,
       );
@@ -74,9 +85,9 @@ describe("Exchange", () => {
     describe("Success", () => {
       it("tracks the token deposit", async () => {
         expect(await token_one.balanceOf(exchange.address)).to.equal(ammount);
-        expect(await exchange.tokens(token_one.address, myWallet.address))
+        expect(await exchange.tokens(token_one.address, maker.address))
           .to.be.equal(ammount);
-        expect(await exchange.balanceOf(token_one.address, myWallet.address))
+        expect(await exchange.balanceOf(token_one.address, maker.address))
           .to.be.equal(ammount);
       });
       it("emit Deposit event", () => {
@@ -84,7 +95,7 @@ describe("Exchange", () => {
         expect(event.event).to.equal("Deposit");
         const args = event.args!;
         expect(args.token).to.equal(token_one.address);
-        expect(args.user).to.equal(myWallet.address);
+        expect(args.user).to.equal(maker.address);
         expect(args.ammount).to.equal(ammount);
         expect(args.balance).to.equal(ammount);
       });
@@ -93,7 +104,7 @@ describe("Exchange", () => {
     describe("Failure", () => {
       it("reverted: token not approved", async () => {
         await expect(
-          exchange.connect(myWallet)
+          exchange.connect(maker)
             .depositToken(token_one.address, ammount),
         )
           .to.be.reverted;
@@ -102,12 +113,12 @@ describe("Exchange", () => {
       it("should fail if the user approved ammount is let than attempt to transfer", async () => {
         let approvedAmmount = WeiHelper.parse(100);
         let invalidAmmount = WeiHelper.parse(101);
-        let approvaltx = await token_one.connect(myWallet)
+        let approvaltx = await token_one.connect(maker)
           .approve(exchange.address, approvedAmmount);
         await approvaltx.wait();
 
         await expect(
-          exchange.connect(myWallet).depositToken(
+          exchange.connect(maker).depositToken(
             token_one.address,
             invalidAmmount,
           ),
@@ -122,20 +133,20 @@ describe("Exchange", () => {
     let ammount = WeiHelper.parse(100);
     beforeEach(async () => {
       // Approve Token
-      let approvalTx = await token_one.connect(myWallet).approve(
+      let approvalTx = await token_one.connect(maker).approve(
         exchange.address,
         ammount,
       );
       await approvalTx.wait();
       // Deposit Token
-      transaction = await exchange.connect(myWallet).depositToken(
+      transaction = await exchange.connect(maker).depositToken(
         token_one.address,
         ammount,
       );
       result = await transaction.wait();
 
       // Now Withdraw Token
-      transaction = await exchange.connect(myWallet).withdrawToken(
+      transaction = await exchange.connect(maker).withdrawToken(
         token_one.address,
         ammount,
       );
@@ -145,9 +156,9 @@ describe("Exchange", () => {
     describe("Success", () => {
       it("withdraw token funds", async () => {
         expect(await token_one.balanceOf(exchange.address)).to.equal(0);
-        expect(await exchange.tokens(token_one.address, myWallet.address))
+        expect(await exchange.tokens(token_one.address, maker.address))
           .to.be.equal(0);
-        expect(await exchange.balanceOf(token_one.address, myWallet.address))
+        expect(await exchange.balanceOf(token_one.address, maker.address))
           .to.be.equal(0);
       });
       it("emit Withdraw event", () => {
@@ -155,7 +166,7 @@ describe("Exchange", () => {
         expect(event.event).to.equal("Withdraw");
         const args = event.args!;
         expect(args.token).to.equal(token_one.address);
-        expect(args.user).to.equal(myWallet.address);
+        expect(args.user).to.equal(maker.address);
         expect(args.ammount).to.equal(ammount);
         expect(args.balance).to.equal(0);
       });
@@ -164,7 +175,7 @@ describe("Exchange", () => {
     describe("Failure", () => {
       it("revert: attempt to withdraw more than deposited", async () => {
         await expect(
-          exchange.connect(myWallet).withdrawToken(token_one.address, ammount),
+          exchange.connect(maker).withdrawToken(token_one.address, ammount),
         ).to.be.reverted;
       });
     });
@@ -176,13 +187,13 @@ describe("Exchange", () => {
     let ammount = WeiHelper.parse(1);
     beforeEach(async () => {
       // Approve Token
-      let approvalTx = await token_one.connect(myWallet).approve(
+      let approvalTx = await token_one.connect(maker).approve(
         exchange.address,
         ammount,
       );
       await approvalTx.wait();
       // Deposit Token
-      transaction = await exchange.connect(myWallet).depositToken(
+      transaction = await exchange.connect(maker).depositToken(
         token_one.address,
         ammount,
       );
@@ -190,7 +201,7 @@ describe("Exchange", () => {
     });
 
     it("tracks the token deposit", async () => {
-      expect(await exchange.balanceOf(token_one.address, myWallet.address))
+      expect(await exchange.balanceOf(token_one.address, maker.address))
         .to.equal(ammount);
     });
   });
@@ -203,19 +214,19 @@ describe("Exchange", () => {
     describe("Success", async () => {
       beforeEach(async () => {
         // Approve
-        transaction = await token_one.connect(myWallet).approve(
+        transaction = await token_one.connect(maker).approve(
           exchange.address,
           ammount,
         );
         reciept = await transaction.wait();
         // Deposit
-        transaction = await exchange.connect(myWallet).depositToken(
+        transaction = await exchange.connect(maker).depositToken(
           token_one.address,
           ammount,
         );
         reciept = await transaction.wait();
         //make oder
-        transaction = await exchange.connect(myWallet)
+        transaction = await exchange.connect(maker)
           .makeOrder(
             token_two.address,
             ammount_to_get,
@@ -234,7 +245,7 @@ describe("Exchange", () => {
         expect(order.id).to.equal(1);
         expect(order.ammountGive).to.be.equal(ammount_to_give);
         expect(order.ammountGet).to.be.equal(ammount_to_get);
-        expect(order.user).to.be.equal(myWallet.address);
+        expect(order.user).to.be.equal(maker.address);
         expect(order.tokenGet).to.be.equal(token_two.address);
         expect(order.tokenGive).to.be.equal(token_one.address);
       });
@@ -246,7 +257,7 @@ describe("Exchange", () => {
 
         let args = event.args!;
         expect(args.id).to.equal(1);
-        expect(args.user).to.equal(myWallet.address);
+        expect(args.user).to.equal(maker.address);
         expect(args.tokenGet).to.equal(token_two.address);
         expect(args.ammountGet).to.equal(ammount_to_get);
         expect(args.ammountGive).to.equal(ammount_to_give);
@@ -257,7 +268,7 @@ describe("Exchange", () => {
     describe("Failure", () => {
       it("REJECTS: with no balance", async () => {
         await expect(
-          exchange.connect(myWallet)
+          exchange.connect(maker)
             .makeOrder(
               token_two.address,
               ammount_to_get,
@@ -272,27 +283,48 @@ describe("Exchange", () => {
   describe("Order Action", () => {
     let transaction: ContractTransaction;
     let reciept: ContractReceipt;
-    let ammount = WeiHelper.parse(1);
+    let ammount_maker_request_token_one = WeiHelper.parse(1);
 
     beforeEach(async () => {
-      // Aprrove
-      transaction = await token_one.connect(myWallet).approve(
+      // Aprrove -1 
+      transaction = await token_one.connect(maker).approve(
         exchange.address,
-        ammount,
+        ammount_maker_request_token_one,
       );
       reciept = await transaction.wait();
-      // deposit
-      transaction = await exchange.connect(myWallet).depositToken(
+      // deposit -1 
+      transaction = await exchange.connect(maker).depositToken(
         token_one.address,
-        ammount,
+        ammount_maker_request_token_one,
       );
       reciept = await transaction.wait();
-      // make an order
-      transaction = await exchange.connect(myWallet).makeOrder(
+      // make an order -1 
+      transaction = await exchange.connect(maker).makeOrder(
         token_two.address,
-        ammount,
+        ammount_maker_request_token_one,
         token_one.address,
-        ammount,
+        ammount_maker_request_token_one,
+      );
+      reciept = await transaction.wait();
+
+      // Aprrove -2
+      transaction = await token_one.connect(maker).approve(
+        exchange.address,
+        ammount_maker_request_token_one,
+      );
+      reciept = await transaction.wait();
+      // deposit - 2
+      transaction = await exchange.connect(maker).depositToken(
+        token_one.address,
+        ammount_maker_request_token_one,
+      );
+      reciept = await transaction.wait();
+      // make an order -2 
+      transaction = await exchange.connect(maker).makeOrder(
+        token_two.address,
+        ammount_maker_request_token_one,
+        token_one.address,
+        ammount_maker_request_token_one,
       );
       reciept = await transaction.wait();
     });
@@ -300,7 +332,7 @@ describe("Exchange", () => {
     describe("Cancelling orders", () => {
       describe("Success", async () => {
         beforeEach(async () => {
-          transaction = await exchange.connect(myWallet).cancelOrder(1);
+          transaction = await exchange.connect(maker).cancelOrder(1);
           reciept = await transaction.wait();
         });
 
@@ -314,11 +346,11 @@ describe("Exchange", () => {
 
           const args = event.args!;
           expect(args.id).to.be.equal(1);
-          expect(args.user).to.be.equal(myWallet.address);
+          expect(args.user).to.be.equal(maker.address);
           expect(args.tokenGet).to.be.equal(token_two.address);
-          expect(args.ammountGet).to.be.equal(ammount);
+          expect(args.ammountGet).to.be.equal(ammount_maker_request_token_one);
           expect(args.tokenGive).to.be.equal(token_one.address);
-          expect(args.ammountGive).to.be.equal(ammount);
+          expect(args.ammountGive).to.be.equal(ammount_maker_request_token_one);
           expect(args.unix_created_at).to.be.at.least(1);
           expect(args.unix_cancelled_at).to.be.at.least(1);
         });
@@ -327,7 +359,7 @@ describe("Exchange", () => {
       describe("Failure", () => {
         it("REJECTS: order does not exist", async () => {
           await expect(
-            exchange.connect(myWallet).cancelOrder(2),
+            exchange.connect(maker).cancelOrder(999),
           ).to.be.revertedWith("Order does not exist");
         });
         it("REJECTS: unauthorized cancelation", async () => {
@@ -336,9 +368,109 @@ describe("Exchange", () => {
           ).to.be.revertedWith("Invalid caller");
         });
         it("REJECTS: double cancelation", async () => {
-          await exchange.connect(myWallet).cancelOrder(1);
+          await exchange.connect(maker).cancelOrder(1);
           await expect(
-            exchange.connect(myWallet).cancelOrder(1),
+            exchange.connect(maker).cancelOrder(1),
+          ).to.be.revertedWith("Order already cancelled");
+        });
+      });
+    });
+
+    describe("Filling orders", () => {
+      let amount_deposit_by_taker = WeiHelper.parse(100);
+      beforeEach(async () => {
+        // Approves
+        transaction = await token_two.connect(taker).approve(
+          exchange.address,
+          amount_deposit_by_taker,
+        );
+        reciept = await transaction.wait();
+        // Deposit
+        transaction = await exchange.connect(taker).depositToken(
+          token_two.address,
+          amount_deposit_by_taker,
+        );
+        reciept = await transaction.wait();
+        // Fill order 
+        transaction = await exchange.connect(taker).fillOrder(1);
+        reciept = await transaction.wait();
+      });
+      describe("Success", async () => {
+        it("Execute the trade and charge fees", async () => {
+          // still have one pending order
+          expect(await exchange.balanceOf(token_one.address, maker.address)).to
+            .equal(WeiHelper.parse(1));
+
+          expect(await exchange.balanceOf(token_one.address, taker.address)).to
+            .equal(WeiHelper.parse(1));
+
+          expect(await exchange.balanceOf(token_two.address, maker.address)).to
+            .equal(ammount_maker_request_token_one);
+
+          expect(await exchange.balanceOf(token_two.address, taker.address)).to
+            .equal(WeiHelper.parse(98.9));
+
+          expect(
+            await exchange.balanceOf(token_two.address, feeAccount.address),
+          ).to
+            .equal(WeiHelper.parse(0.1));
+        });
+
+        it("Only order ID which is filled is marked done", async () => {
+          let tx = await token_one.connect(maker).approve(
+            exchange.address,
+            WeiHelper.parse(1),
+          );
+          let receipt = await tx.wait();
+          tx = await exchange.connect(maker).depositToken(
+            token_one.address,
+            WeiHelper.parse(1),
+          );
+          receipt = await tx.wait();
+          tx = await exchange.connect(maker).makeOrder(
+            token_two.address,
+            WeiHelper.parse(1),
+            token_one.address,
+            WeiHelper.parse(1),
+          );
+          receipt = await tx.wait();
+          expect(await exchange.orderFilled(1)).to.be.equal(true);
+          expect(await exchange.orderFilled(2)).to.be.equal(false);
+        });
+
+        it("emit fill event", async () => {
+          let event = reciept.events![0];
+          expect(event.event!).to.equal("Trade");
+
+          const args = event.args!;
+          expect(args.id).to.be.equal(1);
+          expect(args.maker).to.be.equal(taker.address);
+          expect(args.tokenGet).to.be.equal(token_two.address);
+          expect(args.ammountGet).to.be.equal(WeiHelper.parse(1));
+          expect(args.tokenGive).to.be.equal(token_one.address);
+          expect(args.ammountGive).to.be.equal(WeiHelper.parse(1));
+          expect(args.creator).to.be.at.equal(maker.address);
+          expect(args.timestamp).to.be.at.least(1);
+        });
+      });
+
+      describe("Failure", () => {
+        it("REJECTS: order does not exist", async () => {
+          await expect(
+            exchange.connect(taker).fillOrder(9999),
+          ).to.be.revertedWith("Order does not exist");
+        });
+
+        it("REJECTS: order is already filled", async () => {
+          await expect(
+            exchange.connect(taker).fillOrder(1),
+          ).to.be.revertedWith("Order already filled");
+        });
+
+        it("REJECTS: order is cancelled", async () => {
+          await exchange.connect(maker).cancelOrder(2);
+          await expect(
+            exchange.connect(taker).fillOrder(2),
           ).to.be.revertedWith("Order already cancelled");
         });
       });

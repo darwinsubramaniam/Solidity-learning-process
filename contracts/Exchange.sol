@@ -32,6 +32,7 @@ contract Exchange {
     // Orders Mapping id their orders Key = ID of Order
     mapping(uint256 => _Order) public orders;
     mapping(uint256 => bool) public orderCancelled;
+    mapping(uint256 => bool) public orderFilled;
     uint256 public orderCount;
 
     event Deposit(
@@ -65,6 +66,17 @@ contract Exchange {
         uint256 ammountGive,
         uint256 unix_created_at,
         uint256 unix_cancelled_at
+    );
+
+    event Trade(
+        uint256 id,
+        address maker,
+        address tokenGet,
+        uint256 ammountGet,
+        address tokenGive,
+        uint256 ammountGive,
+        address creator,
+        uint256 timestamp
     );
 
     constructor(address _feeAccount, uint256 _feePercent) {
@@ -112,7 +124,7 @@ contract Exchange {
             "insufficient Balance"
         );
 
-        orderCount += 1;
+        orderCount++;
         orders[orderCount] = _Order(
             orderCount, // ID
             msg.sender, // user
@@ -137,10 +149,10 @@ contract Exchange {
 
     function cancelOrder(uint256 _id) public {
         // order not cancelled yet
-        require(!orderCancelled[_id], "Order already cancelled");       
+        require(!orderCancelled[_id], "Order already cancelled");
 
         _Order storage _order = orders[_id];
-        
+
         // order exist
         require(_order.id == _id, "Order does not exist");
         // order belong to the caller
@@ -156,6 +168,68 @@ contract Exchange {
             _order.tokenGive,
             _order.ammountGive,
             _order.unix_created_at,
+            block.timestamp
+        );
+    }
+
+    // ----------------------------
+    // Executing Orders
+
+    function fillOrder(uint256 _id) public {
+        // 1. Must be valid OrderID
+        require(_id > 0 && _id <= orderCount, "Order does not exist");
+        // 2. Order can't be filled
+        require(!orderFilled[_id], "Order already filled");
+        // 3. Order can't be cancelled
+        require(!orderCancelled[_id], "Order already cancelled");
+        // Fetch order
+        _Order storage _order = orders[_id];
+        // Execute the trade
+        _trade(
+            _order.id,
+            _order.user,
+            _order.tokenGet,
+            _order.ammountGet,
+            _order.tokenGive,
+            _order.ammountGive
+        );
+    }
+
+    function _trade(
+        uint256 _orderId,
+        address _maker,
+        address _tokenForMaker,
+        uint256 _amountGetForMaker,
+        address _tokenGiveToTaker,
+        uint256 _amountGiveToTaker
+    ) internal {
+        address _taker = msg.sender;
+        // Fee is paid by the user who filled the order (msg.sender)
+        // Fee is deducted from _amountGet
+        uint256 _feeAmount = (_amountGetForMaker * feePercent) / 100;
+
+        // Do trade here
+        // Taker gives requested token to maker
+        tokens[_tokenForMaker][_taker] -= (_amountGetForMaker + _feeAmount);
+        tokens[_tokenForMaker][_maker] += _amountGetForMaker;
+
+        // maker gives aways give_token to taker
+        tokens[_tokenGiveToTaker][_maker] -= _amountGiveToTaker;
+        tokens[_tokenGiveToTaker][_taker] += _amountGiveToTaker;
+
+        // Charge Fees
+        tokens[_tokenForMaker][feeAccount] += _feeAmount;
+
+        orderFilled[_orderId] = true;
+
+        emit Trade(
+            _orderId,
+            _taker,
+            _tokenForMaker,
+            _amountGetForMaker,
+            _tokenGiveToTaker,
+            _amountGiveToTaker,
+            _maker,
             block.timestamp
         );
     }
