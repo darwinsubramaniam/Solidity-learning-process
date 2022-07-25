@@ -56,8 +56,8 @@ contract Token {
         public
         returns (bool success)
     {
-        require(balanceOf[msg.sender] >= _value);
-        require(_spender != address(0));
+        require(balanceOf[msg.sender] >= _value, 'Insufficient balance');
+        require(_spender != address(0), 'Invalid spender');
         allowance[msg.sender][_spender] = _value;
         emit Approval(msg.sender, _spender, _value);
         return true;
