@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.9;
-
+import "hardhat/console.sol";
 contract Token {
     string public name;
     string public symbol;
@@ -68,8 +68,8 @@ contract Token {
         address _to,
         uint256 _value
     ) public returns (bool success) {
-        require(_value <= allowance[_from][msg.sender]);
-        require(_value <= balanceOf[_from]);
+        require(_value <= allowance[_from][msg.sender], 'insufficent allowance');
+        require(_value <= balanceOf[_from],'insufficent wallet balance');
         // reset allowance
         allowance[_from][msg.sender] -= _value;
         // spend token
