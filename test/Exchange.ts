@@ -1,11 +1,6 @@
 import { ethers } from "hardhat";
-import { assert, expect } from "chai";
-import {
-  Contract,
-  ContractReceipt,
-  ContractTransaction,
-  Transaction,
-} from "ethers";
+import { expect } from "chai";
+import { Contract, ContractReceipt, ContractTransaction } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Token } from "../typechain-types";
 import { WeiHelper } from "./Helper/WeiParser";
@@ -245,7 +240,7 @@ describe("Exchange", () => {
       });
 
       it("Emit order event", () => {
-        expect(reciept.events!).is.not.undefined
+        expect(reciept.events!).is.not.undefined;
         let event = reciept.events![0];
         expect(event.event!).to.equal("Order");
 
@@ -260,15 +255,93 @@ describe("Exchange", () => {
     });
 
     describe("Failure", () => {
-        it('REJECTS: with no balance', async () =>{
-            await expect(exchange.connect(myWallet)
+      it("REJECTS: with no balance", async () => {
+        await expect(
+          exchange.connect(myWallet)
             .makeOrder(
               token_two.address,
               ammount_to_get,
               token_one.address,
               ammount_to_give,
-            )).to.be.revertedWith("insufficient Balance")
-        })
+            ),
+        ).to.be.revertedWith("insufficient Balance");
+      });
+    });
+  });
+
+  describe("Order Action", () => {
+    let transaction: ContractTransaction;
+    let reciept: ContractReceipt;
+    let ammount = WeiHelper.parse(1);
+
+    beforeEach(async () => {
+      // Aprrove
+      transaction = await token_one.connect(myWallet).approve(
+        exchange.address,
+        ammount,
+      );
+      reciept = await transaction.wait();
+      // deposit
+      transaction = await exchange.connect(myWallet).depositToken(
+        token_one.address,
+        ammount,
+      );
+      reciept = await transaction.wait();
+      // make an order
+      transaction = await exchange.connect(myWallet).makeOrder(
+        token_two.address,
+        ammount,
+        token_one.address,
+        ammount,
+      );
+      reciept = await transaction.wait();
+    });
+
+    describe("Cancelling orders", () => {
+      describe("Success", async () => {
+        beforeEach(async () => {
+          transaction = await exchange.connect(myWallet).cancelOrder(1);
+          reciept = await transaction.wait();
+        });
+
+        it("Updates cancelled orders", async () => {
+          expect(await exchange.orderCancelled(1)).to.be.equal(true);
+        });
+
+        it("emit cancellation event", async () => {
+          let event = reciept.events![0];
+          expect(event.event!).to.equal("CancelOrder");
+
+          const args = event.args!;
+          expect(args.id).to.be.equal(1);
+          expect(args.user).to.be.equal(myWallet.address);
+          expect(args.tokenGet).to.be.equal(token_two.address);
+          expect(args.ammountGet).to.be.equal(ammount);
+          expect(args.tokenGive).to.be.equal(token_one.address);
+          expect(args.ammountGive).to.be.equal(ammount);
+          expect(args.unix_created_at).to.be.at.least(1);
+          expect(args.unix_cancelled_at).to.be.at.least(1);
+        });
+      });
+
+      describe("Failure", () => {
+        it("REJECTS: order does not exist", async () => {
+          await expect(
+            exchange.connect(myWallet).cancelOrder(2),
+          ).to.be.revertedWith("Order does not exist");
+        });
+        it("REJECTS: unauthorized cancelation", async () => {
+          await expect(
+            exchange.connect(accounts[5]).cancelOrder(1),
+          ).to.be.revertedWith("Invalid caller");
+        });
+        it("REJECTS: double cancelation", async () => {
+          await exchange.connect(myWallet).cancelOrder(1);
+          await expect(
+            exchange.connect(myWallet).cancelOrder(1),
+          ).to.be.revertedWith("Order already cancelled");
+        });
+      });
     });
   });
 });

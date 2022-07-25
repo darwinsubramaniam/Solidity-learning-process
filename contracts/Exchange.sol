@@ -7,8 +7,8 @@ import "./Token.sol";
 // [x] Deposit Token
 // [x] Withdraw Tokens
 // [x] Check Balances
-// [] Make Orders
-// [] Cancel Orders
+// [x] Make Orders
+// [x] Cancel Orders
 // [] Fill Orders
 // [] Charge Fees
 // [x] Track Fee Account
@@ -31,7 +31,7 @@ contract Exchange {
 
     // Orders Mapping id their orders Key = ID of Order
     mapping(uint256 => _Order) public orders;
-
+    mapping(uint256 => bool) public orderCancelled;
     uint256 public orderCount;
 
     event Deposit(
@@ -46,7 +46,7 @@ contract Exchange {
         uint256 ammount,
         uint256 balance
     );
-    event Order (
+    event Order(
         uint256 id,
         address user,
         address tokenGet,
@@ -56,6 +56,16 @@ contract Exchange {
         uint256 unix_created_at
     );
 
+    event CancelOrder(
+        uint256 id,
+        address user,
+        address tokenGet,
+        uint256 ammountGet,
+        address tokenGive,
+        uint256 ammountGive,
+        uint256 unix_created_at,
+        uint256 unix_cancelled_at
+    );
 
     constructor(address _feeAccount, uint256 _feePercent) {
         feeAccount = _feeAccount;
@@ -97,10 +107,13 @@ contract Exchange {
         uint256 _ammountGive
     ) public {
         // Prevent orders if tokens aren't on exchange.
-        require(balanceOf(_tokenGive,msg.sender) >= _ammountGive, "insufficient Balance");
+        require(
+            balanceOf(_tokenGive, msg.sender) >= _ammountGive,
+            "insufficient Balance"
+        );
 
         orderCount += 1;
-        orders[orderCount] =  _Order(
+        orders[orderCount] = _Order(
             orderCount, // ID
             msg.sender, // user
             _tokenGet,
@@ -118,6 +131,31 @@ contract Exchange {
             _ammountGet,
             _tokenGive,
             _ammountGive,
+            block.timestamp
+        );
+    }
+
+    function cancelOrder(uint256 _id) public {
+        // order not cancelled yet
+        require(!orderCancelled[_id], "Order already cancelled");       
+
+        _Order storage _order = orders[_id];
+        
+        // order exist
+        require(_order.id == _id, "Order does not exist");
+        // order belong to the caller
+        require(orders[_id].user == msg.sender, "Invalid caller");
+
+        orderCancelled[_id] = true;
+
+        emit CancelOrder(
+            _order.id,
+            _order.user,
+            _order.tokenGet,
+            _order.ammountGet,
+            _order.tokenGive,
+            _order.ammountGive,
+            _order.unix_created_at,
             block.timestamp
         );
     }
