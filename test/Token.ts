@@ -3,7 +3,7 @@ import { expect } from "chai";
 import { BigNumber, ContractReceipt, ContractTransaction } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { Token } from "../typechain-types";
-import { WeiHelper } from "./Helper/WeiParser"
+import { WeiHelper } from "../scripts/WeiHelper";
 
 
 describe("Token", () => {
