@@ -5,7 +5,8 @@ import {
   loadAccount,
   loadNetwork,
   loadProvider,
-  loadToken
+  loadTokens,
+  loadExchange
 } from '../store/interactions';
 
 function App() {
@@ -13,13 +14,23 @@ function App() {
   const dispatch = useDispatch();
 
   const loadBlockchainData = async () => {
-    await loadAccount(dispatch);
+    // Connect to ethereum provider
     const provider = loadProvider(dispatch);
-    const chainId  = await loadNetwork(provider, dispatch);
 
-    const {token, symbol} = await loadToken(provider, CONFIG[chainId].DApp.address, dispatch);
-    console.log(token.address);
-    console.log(symbol);
+    // get the current network id
+    const chainId = await loadNetwork(provider, dispatch);
+
+    // Fetch current account and balance
+    await loadAccount(provider, dispatch);
+
+    // Load tokens
+    const DApp = CONFIG[chainId].DApp;
+    const mETH = CONFIG[chainId].mETH;
+    await loadTokens(provider, [DApp.address, mETH.address], dispatch);
+
+    // Load exchange
+    const exchange = CONFIG[chainId].exchange;
+    await loadExchange(provider, exchange.address, dispatch);
   }
 
   useEffect(() => {
