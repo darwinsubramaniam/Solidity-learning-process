@@ -8,6 +8,7 @@ import {
   loadTokens,
   loadExchange
 } from '../store/interactions';
+import Markets from './Market';
 import Navbar from './Navbar';
 
 function App() {
@@ -50,7 +51,7 @@ function App() {
       <main className='exchange grid'>
         <section className='exchange__section--left grid'>
 
-          {/* Markets */}
+          <Markets></Markets>
 
           {/* Balance */}
 
